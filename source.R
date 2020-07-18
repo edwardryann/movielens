@@ -110,11 +110,8 @@ rm(plot_1, plot_2)
 
 # Different timestamp averages
 
-# Mutate edx and validation
+# Mutate edx
 edx <- edx %>%
-  mutate(day = timestamp %>% as_datetime() %>% round_date(unit = "day"),
-         year = timestamp %>% as_datetime() %>% round_date(unit = "year"))
-validation <- validation %>%
   mutate(day = timestamp %>% as_datetime() %>% round_date(unit = "day"),
          year = timestamp %>% as_datetime() %>% round_date(unit = "year"))
 
@@ -146,12 +143,6 @@ release_date <- edx$title %>%
   str_replace(pattern = "\\)", replacement = "")
 edx <- edx %>%
   mutate(release_date = release_date)
-release_date <- validation$title %>%
-  str_extract(pattern = "\\(\\d{4}\\)$") %>%
-  str_replace(pattern = "\\(", replacement = "") %>%
-  str_replace(pattern = "\\)", replacement = "")
-validation <- validation %>%
-  mutate(release_date = release_date)
 rm(release_date)
 
 edx %>%
@@ -168,9 +159,6 @@ edx %>%
 # Adding age by year
 age <- as.Date(edx$year) - as.Date(edx$release_date, format = "%Y")
 edx <- edx %>%
-  mutate(age_year = age)
-age <- as.Date(validation$year) - as.Date(validation$release_date, format = "%Y")
-validation <- validation %>%
   mutate(age_year = age)
 rm(age)
 
@@ -254,43 +242,52 @@ edx %>%
 
 #####
 # Model 1 : Just the average -------------------------------------------------------
+# Finding the average
 mu <- mean(edx$rating)
+# Getting the prediction
 prediction <- rep(mu, nrow(validation))
+# Finding RMSE of the model
 rmse_results <- bind_rows(rmse_results,
                           tibble(Model = "Just the average",
                                  RMSE = RMSE(validation$rating, prediction)))
 # Model 2 : Movie effect ------------------------------------------------------------
+# Finding movie averages from residuals
 movie_avg <- edx %>%
   group_by(movieId) %>%
   summarize(b_i = mean(rating-mu))
 
+# Getting prediction
 prediction <- validation %>%
   left_join(movie_avg, by = "movieId") %>%
   mutate(prediction = mu + b_i) %>%
   pull(prediction)
 
+# Finding RMSE of the model
 rmse_results <- bind_rows(rmse_results,
                           tibble(Model = "Movie Effect",
                                  RMSE = RMSE(validation$rating, prediction)))
 # Model 3 : Movie + User Effects -----------------------------------------------------
+# Finding user averages from residuals
 user_avg <- edx %>%
   left_join(movie_avg, by = "movieId") %>%
   group_by(userId) %>%
   summarize(b_u = mean(rating - mu - b_i))
 
+# Getting prediction
 prediction <- validation %>%
   left_join(movie_avg, by = "movieId") %>%
   left_join(user_avg, by = "userId") %>%
   mutate(prediction = mu + b_i + b_u) %>%
   pull(prediction)
 
+# Finding RMSE of the model
 rmse_results <- bind_rows(rmse_results,
                           tibble(Model = "Movie + User Effects",
                                  RMSE = RMSE(validation$rating, prediction)))
 
 # Model 4 : Movie + User + Timestamp Effects ------------------------------
 
-# Mutate edx and validation
+# Mutate edx and validation, adding day and year of the ratings
 edx <- edx %>%
   mutate(day = timestamp %>% as_datetime() %>% round_date(unit = "day"),
          year = timestamp %>% as_datetime() %>% round_date(unit = "year"))
@@ -298,18 +295,24 @@ validation <- validation %>%
   mutate(day = timestamp %>% as_datetime() %>% round_date(unit = "day"),
          year = timestamp %>% as_datetime() %>% round_date(unit = "year"))
 
-# Timestamp effect
+# Timestamp effect, by day
+
+# Finding day averages from residuals
 day_avg <- edx %>%
   left_join(movie_avg, by = "movieId") %>%
   left_join(user_avg, by = "userId") %>%
   group_by(day) %>%
   summarize(b_t = mean(rating - mu - b_i - b_u))
+
+# Getting prediction
 prediction <- validation %>%
   left_join(movie_avg, by = "movieId") %>%
   left_join(user_avg, by = "userId") %>%
   left_join(day_avg, by = "day") %>%
   mutate(prediction = mu + + b_i + b_u + b_t) %>%
   pull(prediction)
+
+# Finding RMSE of the model
 rmse_results <- bind_rows(rmse_results,
                           tibble(Model = "Movie + User + Timestamp (Day) Effects",
                                  RMSE = RMSE(validation$rating, prediction)))
@@ -318,28 +321,38 @@ rmse_results <- bind_rows(rmse_results,
 
 # Release date effect
 
-# Extracting release date
+# Extracting release date from the title of edx
 release_date <- edx$title %>%
   str_extract(pattern = "\\(\\d{4}\\)$") %>%
   str_replace(pattern = "\\(", replacement = "") %>%
   str_replace(pattern = "\\)", replacement = "")
+
+# Mutate release date into edx
 edx <- edx %>%
   mutate(release_date = release_date)
+
+# Extracting release date from the title of validation
 release_date <- validation$title %>%
   str_extract(pattern = "\\(\\d{4}\\)$") %>%
   str_replace(pattern = "\\(", replacement = "") %>%
   str_replace(pattern = "\\)", replacement = "")
+
+# Mutate release date into validation
 validation <- validation %>%
   mutate(release_date = release_date)
+
+# Removing unused variable
 rm(release_date)
 
-# Prediction
+# Finding release date averages from residuals
 release_avg <- edx %>%
   left_join(movie_avg, by = "movieId") %>%
   left_join(user_avg, by = "userId") %>%
   left_join(day_avg, by = "day") %>%
   group_by(release_date) %>%
   summarize(b_rel = mean(rating-mu-b_i-b_u-b_t))
+
+# Getting prediction
 prediction <- validation %>%
   left_join(movie_avg, by = "movieId") %>%
   left_join(user_avg, by = "userId") %>%
@@ -347,6 +360,8 @@ prediction <- validation %>%
   left_join(release_avg, by = "release_date") %>%
   mutate(prediction = mu + b_i + b_u + b_t + b_rel) %>%
   pull(prediction)
+
+# Finding RMSE of the model
 rmse_results <- bind_rows(rmse_results,
                           tibble(Model = "Movie + User + Timestamp (Day) + Release Date Effects",
                                  RMSE = RMSE(validation$rating, prediction)))
@@ -355,14 +370,24 @@ rmse_results <- bind_rows(rmse_results,
 
 # Age effect
 
-# By year
+# Finding age by subtracting rating date with release date (edx)
 age <- as.Date(edx$year) - as.Date(edx$release_date, format = "%Y")
+
+# Mutate age into edx
 edx <- edx %>%
   mutate(age_year = age)
+
+# Finding age by substracting rating date with release date (validation)
 age <- as.Date(validation$year) - as.Date(validation$release_date, format = "%Y")
+
+# Mutate age into validation
 validation <- validation %>%
   mutate(age_year = age)
+
+# Removing unsued variable
 rm(age)
+
+# Finding age averages from residuals
 age_avg <- edx %>%
   left_join(movie_avg, by = "movieId") %>%
   left_join(user_avg, by = "userId") %>%
@@ -370,6 +395,8 @@ age_avg <- edx %>%
   left_join(release_avg, by = "release_date") %>%
   group_by(age_year) %>%
   summarize(b_age = mean(rating - mu - b_i - b_u - b_t - b_rel))
+
+# Getting prediction
 prediction <- validation %>%
   left_join(movie_avg, by = "movieId") %>%
   left_join(user_avg, by = "userId") %>%
@@ -378,12 +405,16 @@ prediction <- validation %>%
   left_join(age_avg, by = "age_year") %>%
   mutate(prediction = mu + b_i + b_u + b_t + b_rel + b_age) %>%
   pull(prediction)
+
+# Finding RMSE of the model
 rmse_results <- bind_rows(rmse_results,
                           tibble(Model = "Movie + User + Timestamp (Day) + Release Date + Age (Year) Effects",
                                  RMSE = RMSE(validation$rating, prediction)))
 
 
 # Model 7 : Movie + User + Timestamp + Release Date + Age + Genre Effects -----------------------------------------------------------
+
+# Finding genre averages from residuals
 genre_avg <- edx %>%
   left_join(movie_avg, by = "movieId") %>%
   left_join(user_avg, by = "userId") %>%
@@ -392,6 +423,8 @@ genre_avg <- edx %>%
   left_join(age_avg, by = "age_year") %>%
   group_by(genres) %>%
   summarize(b_g = mean(rating - mu - b_i - b_u - b_t - b_rel - b_age))
+
+# Getting prediction
 prediction <- validation %>%
   left_join(movie_avg, by = "movieId") %>%
   left_join(user_avg, by = "userId") %>%
@@ -401,6 +434,8 @@ prediction <- validation %>%
   left_join(genre_avg, by = "genres") %>%
   mutate(prediction = mu + b_i + b_u + b_t + b_rel + b_age + b_g) %>%
   pull(prediction)
+
+# Finding RMSE of the model
 rmse_results <- bind_rows(rmse_results,
                           tibble(Model = "Movie + User + Timestamp (Day) + Release Date + Age (Year) + Genre Effects",
                                  RMSE = RMSE(validation$rating, prediction)))
@@ -408,9 +443,11 @@ rmse_results <- bind_rows(rmse_results,
 
 # Model 8 : Regularization Movie + User + Timestamp + Release Date + Age + Genres Effects -----------------------------------------------------------------
 
+# Setting parameters
 k <- 25
 lambda <- seq(4.75,6.25,0.25)
 
+# Creating train and test set
 set.seed(1)
 test_index <- createDataPartition(edx$rating, times = 1, p = 0.1, list = FALSE)
 temp <- edx %>% slice(test_index)
@@ -426,15 +463,18 @@ test_set <- temp %>%
 # Add rows removed from train set back into edx set
 removed <- anti_join(temp, test_set) # Removed 17 rows only
 train_set <- bind_rows(train_set, removed)
+# Removing unused variables
 rm(test_index, removed, temp)
 
-#Create train_set partitions
+# Create train_set partitions
 set.seed(1)
 folds_index <- createFolds(train_set$rating, k = k)
 
-# Cross validation (Finding the best lambda for regularization)
+# Cross validation (Folds) (Finding the best lambda for regularization)
 train_folds_index <- seq(1:nrow(train_set))
+
 best_lambda <- function(lambda){
+  # Setting cross validation from partitions
   sapply(1:k, function(x){
     index <- train_folds_index
     index <- index[!index %in% folds_index[[x]]]
@@ -451,8 +491,10 @@ best_lambda <- function(lambda){
     # Add rows removed from test set back into train set
     removed <- anti_join(temp, test_folds_set)
     train_folds_set <- bind_rows(train_folds_set, removed)
+    # Removing unused variables
     rm(index, temp, removed)
     
+    # Finding averages from various effects
     movie_avg <- train_folds_set %>%
       group_by(movieId) %>%
       summarize(b_i = sum(rating-mu)/(n() + lambda))
@@ -483,6 +525,7 @@ best_lambda <- function(lambda){
       summarize(b_g = sum(rating- mu - b_i - b_u - b_t - b_rel - b_age)/(n() + lambda))
     rm(temp)
     
+    # Getting prediction
     prediction <- test_folds_set %>%
       left_join(movie_avg, by = "movieId") %>%
       left_join(user_avg, by = "userId") %>%
@@ -493,20 +536,24 @@ best_lambda <- function(lambda){
       mutate(prediction = mu + b_i + b_u + b_t + b_rel + b_age + b_g) %>%
       pull(prediction)
     
+    # Returning results
     return(RMSE(test_folds_set$rating, prediction))
     
   })
 }
-
+# Storing results
 result <- sapply(lambda, best_lambda)
+
 # Removing unsued variables
 rm(folds_index, train_folds_index)
+
 # PLot RMSE against lambda
 ggplot(mapping = aes(lambda, colMeans(result))) +
   geom_point() +
   ggtitle("Lambda vs RMSE") +
   ylab("RMSE")
-#Best Lambda
+
+# Finding best lambda
 index <- colMeans(result) %>% which.min()
 lambda <- lambda[index]
 lambda
@@ -515,11 +562,15 @@ rm(index)
 
 # Estimating RMSE with the test set
 
+# Setting parameters
 k <- 10
-lambda <- 5.25
 
+# Creating partitions
 folds_index <- createFolds(edx$rating, k = k)
+
+# Storing result
 result <- sapply(1:k, function(x){
+  # Setting cross validation from partition
   temp <- edx %>% slice(folds_index[[x]])
   train_set <- edx %>% slice(-folds_index[[x]])
   # Make sure movieId, userId, day, release date, age, and genres in the test set are also in the train set
@@ -535,6 +586,7 @@ result <- sapply(1:k, function(x){
   train_set <- bind_rows(train_set, removed)
   rm(temp, removed)
   
+  # Finding averages from various effects
   movie_avg <- train_set %>%
     group_by(movieId) %>%
     summarize(b_i = sum(rating-mu)/(n() + lambda))
@@ -565,6 +617,7 @@ result <- sapply(1:k, function(x){
     summarize(b_g = sum(rating- mu - b_i - b_u - b_t - b_rel - b_age)/(n() + lambda))
   rm(temp)
   
+  # Getting prediction
   prediction <- test_set %>%
     left_join(movie_avg, by = "movieId") %>%
     left_join(user_avg, by = "userId") %>%
@@ -575,16 +628,22 @@ result <- sapply(1:k, function(x){
     mutate(prediction = mu + b_i + b_u + b_t + b_rel + b_age + b_g) %>%
     pull(prediction)
   
+  # Returning results
   return(RMSE(test_set$rating, prediction))
 })
+
+# Removing unsued variable
 rm(folds_index)
+
+# Storing estimate of RMSE
 cv_estimate <- tibble()
 cv_estimate <- bind_rows(cv_estimate,
                          tibble(Model = "(Model 8) CV Estimate",
                                 RMSE = mean(result)))
 
-# Final prediction
-lambda <- 5.25
+# Final prediction (using validation)
+
+# Finding averages from various effects
 movie_avg <- edx %>%
   group_by(movieId) %>%
   summarize(b_i = sum(rating-mu)/(n() + lambda))
@@ -615,6 +674,7 @@ genre_avg <- temp %>%
   summarize(b_g = sum(rating- mu - b_i - b_u - b_t - b_rel - b_age)/(n() + lambda))
 rm(temp)
 
+# Getting prediction
 prediction <- validation %>%
   left_join(movie_avg, by = "movieId") %>%
   left_join(user_avg, by = "userId") %>%
@@ -625,13 +685,21 @@ prediction <- validation %>%
   mutate(prediction = mu + b_i + b_u + b_t + b_rel + b_age + b_g) %>%
   pull(prediction)
 
+# Finding difference of the true RMSE with estimate RMSE
+cv_estimate$RMSE - (RMSE(validation$rating, prediction))
+
+# Finding RMSE of the model
 rmse_results <- bind_rows(rmse_results,
                           tibble(Model = "Regularization Movie + User + Timestamp (Day) + Release Date + Age (Year) + Genres Effects ",
                                  RMSE = RMSE(validation$rating, prediction)))
 # IDEA : Matrix Factorization ---------------------------------------------
+
+# Loading library essential to perform matrix factorizaiton
 library(recosystem)
-#Residual data
+
 lambda <- 5.25
+
+# Finding averages from various effects (regularization)
 movie_avg <- edx %>%
   group_by(movieId) %>%
   summarize(b_i = sum(rating-mu)/(n() + lambda))
@@ -662,6 +730,7 @@ genre_avg <- temp %>%
   summarize(b_g = sum(rating- mu - b_i - b_u - b_t - b_rel - b_age)/(n() + lambda))
 rm(temp)
 
+# Getting residual
 residual <- edx %>%
   left_join(movie_avg, by = "movieId") %>%
   left_join(user_avg, by = "userId") %>%
@@ -672,29 +741,40 @@ residual <- edx %>%
   mutate(residual = rating - mu - b_i - b_u - b_t - b_rel - b_age - b_g) %>%
   select(userId, movieId, residual)
 
-#Matrix Factorization (Recosystem package)
+# Matrix Factorization (Recosystem package)
+
+# Preparing the data
 edx_mf <- as.matrix(residual)
 validation_mf <- validation %>% select(userId, movieId, rating) %>% as.matrix()
 
-#Storing data in hard drive
+# Storing data in hard drive 
 write.table(edx_mf, file = "train.txt", sep = " ", row.names = FALSE, col.names = FALSE)
 write.table(validation_mf, file = "test.txt", sep = " ", row.names = FALSE, col.names = FALSE)
 set.seed(1)
+
+# Reading data from hard drive
 train_data <- data_file("train.txt")
 validation_data <- data_file("test.txt")
+
+# Removing unused variables
 rm(edx_mf, validation_mf)
 
-#Creating model object 
+# Creating model object 
 r <- Reco()
-#Tuning parameters
+# Tuning parameters
 opts <- r$tune(train_data, opts = list(dim = c(10, 20, 30), lrate = c(0.1, 0.2),
                                        costp_l1 = 0, costq_l1 = 0,
                                        nthread = 1, niter = 10))
+
+# Train data with best parameter
 r$train(train_data, opts = c(opts$min, nthread = 1, niter = 20))
+
+# Storing prediction
 stored_prediction <- tempfile()
 r$predict(validation_data, out_file(stored_prediction))
 pred_ratings <- scan(stored_prediction)
-#Making final prediction
+
+# Making final prediction
 temp <- validation %>%
   left_join(movie_avg, by = "movieId") %>%
   left_join(user_avg, by = "userId") %>%
